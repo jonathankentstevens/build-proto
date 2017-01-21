@@ -23,9 +23,9 @@ func buildPbFile(protoFile, pbFile string) string {
 	if err != nil {
 		log.Fatalln("Proto file read error:", err.Error(), `: `, protoFile)
 		return ""
-	} else {
-		defer inFile.Close()
 	}
+	defer inFile.Close()
+
 	scanner := bufio.NewScanner(inFile)
 	scanner.Split(bufio.ScanLines)
 	for scanner.Scan() {
