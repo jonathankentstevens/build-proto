@@ -8,6 +8,7 @@
 Command line tool to generate gRPC code for GoLang
 
 # implementation
+    go get github.com/jonathankentstevens/build-proto
 	go install github.com/jonathankentstevens/build-proto
 	
 # usage
