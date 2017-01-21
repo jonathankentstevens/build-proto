@@ -5,7 +5,7 @@
 
 # build-proto
 
-Command line tool to generate gRPC code for GoLang
+Command line tool to generate client & server implementation with your pb stub for gRPC Edit
 
 # implementation
     go get github.com/jonathankentstevens/build-proto
