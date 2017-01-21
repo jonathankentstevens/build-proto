@@ -6,12 +6,13 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/exec"
 	"strings"
-	"utils/cmd"
-	"utils/str"
+	"unicode"
 )
 
-func buildPbFile(protoFile, pbFile string) string {
+// updatePbFile updates the import paths
+func updatePbFIle(protoFile, pbFile string) string {
 	cb, err := getContents(pbFile)
 	if err != nil {
 		log.Fatalln("Read file error:", err.Error())
@@ -30,7 +31,7 @@ func buildPbFile(protoFile, pbFile string) string {
 	for scanner.Scan() {
 		txt := scanner.Text()
 		if strings.Contains(txt, `import "`) {
-			replaceTxt := str.Between(txt, `import "`, `.proto";`)
+			replaceTxt := between(txt, `import "`, `.proto";`)
 			args := strings.Split(replaceTxt, "/")
 			importPkg := strings.Replace(args[len(args)-1], ".proto", "", 1)
 			contents = strings.Replace(contents, `import `+importPkg+` "`+importPkg+`"`, `import "services/`+importPkg+`"`, 1)
@@ -40,6 +41,7 @@ func buildPbFile(protoFile, pbFile string) string {
 	return contents
 }
 
+// buildServer generates server package string
 func buildServer(pkg string) string {
 	return `package main
 
@@ -69,7 +71,7 @@ func main() {
 	server := grpc.NewServer()
 
 	// Register our service implementation with the server
-	proto.Register` + str.UppercaseFirst(pkg) + `Server(server, new(` + pkg + `Server))
+	proto.Register` + uppercaseFirst(pkg) + `Server(server, new(` + pkg + `Server))
 
 	log.Println("Serving on", port)
 	log.Fatalln(server.Serve(listener))
@@ -115,6 +117,7 @@ func (s *` + pkg + `Server) SomeMethod(ctx context.Context, req *SomeRequest) (*
 `
 }
 
+// buildClient generates client package string
 func buildClient(pkg string) string {
 	return `package client
 
@@ -128,7 +131,7 @@ import (
 )
 
 type Client struct {
-	service proto.` + str.UppercaseFirst(pkg) + `Client
+	service proto.` + uppercaseFirst(pkg) + `Client
 }
 
 type syncedClient struct {
@@ -170,7 +173,7 @@ func NewClient() (*Client, error) {
 		return cl.client, nil
 	}
 	cl.client = &Client{
-		service: proto.New` + str.UppercaseFirst(pkg) + `Client(g),
+		service: proto.New` + uppercaseFirst(pkg) + `Client(g),
 	}
 	cl.Unlock()
 
@@ -190,6 +193,7 @@ func (c *Client) SomeMethod(ctx context.Context, id int64) (*proto.SomeResponse,
 `
 }
 
+//getContents returns a byte array of the file contents passed in
 func getContents(path string) ([]byte, error) {
 
 	f, err := os.Open(path)
@@ -289,6 +293,83 @@ func exists(path string) bool {
 	return false
 }
 
+//execute is main method to run command. Allows output to show and whether or
+//not to return the stdout into a string variable
+func execute(command string, showOutput bool, returnOutput bool) (string, error) {
+	if showOutput {
+		log.Println("Running command: " + command)
+	}
+
+	//honor quotes
+	parts := getCmdParts(command)
+	if returnOutput {
+		data, err := exec.Command(parts[0], parts[1:]...).Output()
+		if err != nil {
+			return "", err
+		}
+		return string(data), nil
+	} else {
+		cmd := exec.Command(parts[0], parts[1:]...)
+		if showOutput {
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+		}
+		err := cmd.Run()
+		if err != nil {
+			return "", err
+		}
+	}
+
+	return "", nil
+}
+
+//getCmdParts normalizes command into a string array
+func getCmdParts(command string) []string {
+	lastQuote := rune(0)
+	f := func(c rune) bool {
+		switch {
+		case c == lastQuote:
+			lastQuote = rune(0)
+			return false
+		case lastQuote != rune(0):
+			return false
+		case unicode.In(c, unicode.Quotation_Mark):
+			lastQuote = c
+			return false
+		default:
+			return unicode.IsSpace(c)
+		}
+	}
+
+	var parts []string
+	preParts := strings.FieldsFunc(command, f)
+	for i := range preParts {
+		part := preParts[i]
+		parts = append(parts, strings.Replace(part, "'", "", -1))
+	}
+
+	return parts
+}
+
+//between returns string between two specified characters/strings
+func between(initial string, beginning string, end string) string {
+	return strings.TrimLeft(strings.TrimRight(initial, end), beginning)
+}
+
+//uppercaseFirst.. well, you know what it does
+func uppercaseFirst(s string) string {
+	if len(s) < 2 {
+		return strings.ToLower(s)
+	}
+
+	bts := []byte(s)
+
+	lc := bytes.ToUpper([]byte{bts[0]})
+	rest := bts[1:]
+
+	return string(bytes.Join([][]byte{lc, rest}, nil))
+}
+
 func main() {
 	file := os.Args[1]
 	if file == "" {
@@ -305,12 +386,12 @@ func main() {
 	clientDir := dir + "client/"
 	serverDir := dir + "server/"
 
-	_, err := cmd.Exec("protoc --go_out=plugins=grpc:. "+file, true, false)
+	_, err := execute("protoc --go_out=plugins=grpc:. "+file, true, false)
 	if err != nil {
 		log.Fatalln("protoc error:", err.Error())
 	}
 
-	contents := buildPbFile(file, protoDir+pbFile)
+	contents := updatePbFIle(file, protoDir+pbFile)
 	err = write(protoDir+pbFile, contents, true)
 	if err != nil {
 		log.Fatalln("pb write file error:", err.Error())
@@ -325,7 +406,7 @@ func main() {
 		}
 	}
 
-	_, err = cmd.Exec("go fmt "+serverFile, true, false)
+	_, err = execute("go fmt "+serverFile, true, false)
 	if err != nil {
 		log.Fatalln("go fmt error:", err.Error())
 	}
@@ -339,7 +420,7 @@ func main() {
 		}
 	}
 
-	_, err = cmd.Exec("go fmt "+clientFile, true, false)
+	_, err = execute("go fmt "+clientFile, true, false)
 	if err != nil {
 		log.Fatalln("Go fmt error:", err.Error())
 	}
