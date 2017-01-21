@@ -16,7 +16,6 @@ func buildPbFile(protoFile, pbFile string) string {
 	if err != nil {
 		log.Fatalln("Read file error:", err.Error())
 	}
-
 	contents := string(cb)
 
 	inFile, err := os.Open(protoFile)
