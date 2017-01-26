@@ -119,6 +119,44 @@ func Authenticate(c proto.UserClient, ctx context.Context) (string, error) {
 }
 ```
 
+# client/client_test.go
+```go
+package client_test
+
+import (
+	"services/user/client"
+	"services/user/proto"
+	"testing"
+
+	"golang.org/x/net/context"
+	"google.golang.org/grpc"
+)
+
+type testClient struct{}
+
+func (c *testClient) Authenticate(ctx context.Context, req *proto.AuthRequest, opts ...grpc.CallOption) (*proto.AuthResponse, error) {
+	return &proto.AuthResponse{}, nil
+}
+
+func TestNewClient(t *testing.T) {
+	c, err := client.NewClient()
+	if err != nil {
+		t.Fatalf("unable to connect to gRPC service: %s", err)
+	}
+
+	if c == nil {
+		t.Fatal("client is nil even though no error was thrown")
+	}
+}
+func TestAuthenticate(t *testing.T) {
+	c := new(testClient)
+	_, err := client.Authenticate(c, context.Background())
+	if err != nil {
+		t.Fatalf("expected nil from Authenticate, got error: %v", err)
+	}
+}
+```
+
 # server/main.go
 
 ```go

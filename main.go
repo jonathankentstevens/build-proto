@@ -147,13 +147,13 @@ import (
 	"google.golang.org/grpc"
 )
 
-type Client struct {
+type client struct {
 	service proto.` + uppercaseFirst(pkg) + `Client
 }
 
 type syncedClient struct {
 	sync.Mutex
-	client *Client
+	client *client
 }
 
 var (
@@ -168,7 +168,7 @@ func init() {
 // against the service.
 //
 // If the client is already initialized, it will not dial out again. It will just return the client.
-func NewClient() (*Client, error) {
+func NewClient() (*client, error) {
 
 	if cl.client != nil {
 		return cl.client, nil
@@ -188,7 +188,7 @@ func NewClient() (*Client, error) {
 		cl.Unlock()
 		return cl.client, nil
 	}
-	cl.client = &Client{
+	cl.client = &client{
 		service: proto.New` + uppercaseFirst(pkg) + `Client(g),
 	}
 	cl.Unlock()
@@ -207,7 +207,7 @@ func (c *client) ` + imp.method + `(ctx context.Context, req *proto.` + imp.requ
 // TODO: fill in empty strings
 // ` + imp.method + `...
 func ` + imp.method + `(c proto.` + str.UppercaseFirst(pkg) + `Client, ctx context.Context) (string, error) {
-	r, err := c.` + imp.method + `(ctx, &proto.` + imp.request + `{})
+	_, err := c.` + imp.method + `(ctx, &proto.` + imp.request + `{})
 	if err != nil {
 		return "", err
 	}
@@ -217,6 +217,55 @@ func ` + imp.method + `(c proto.` + str.UppercaseFirst(pkg) + `Client, ctx conte
 	}
 
 	return clientFileContents
+}
+
+func buildTests(pkg string) string {
+	testFileContents := `package client_test
+
+import (
+	"services/` + pkg + `/client"
+	"services/` + pkg + `/proto"
+	"testing"
+
+	"golang.org/x/net/context"
+	"google.golang.org/grpc"
+)
+
+type testClient struct{}
+`
+
+	for _, imp := range implementations {
+		testFileContents += `
+func (c *testClient) ` + imp.method + `(ctx context.Context, req *proto.` + imp.request + `, opts ...grpc.CallOption) (*proto.` + imp.response + `, error) {
+	return &proto.` + imp.response + `{}, nil
+}
+`
+	}
+
+	testFileContents += `
+func TestNewClient(t *testing.T) {
+	c, err := client.NewClient()
+	if err != nil {
+		t.Fatalf("unable to connect to gRPC service: %s", err)
+	}
+
+	if c == nil {
+		t.Fatal("client is nil even though no error was thrown")
+	}
+}`
+
+	for _, imp := range implementations {
+		testFileContents += `
+func Test` + imp.method + `(t *testing.T) {
+	c := new(testClient)
+	_, err := client.` + imp.method + `(c, context.Background())
+	if err != nil {
+		t.Fatalf("expected nil from ` + imp.method + `, got error: %v", err)
+	}
+}`
+	}
+
+	return testFileContents
 }
 
 //getContents returns a byte array of the file contents passed in
@@ -449,6 +498,20 @@ func main() {
 	}
 
 	_, err = execute("go fmt "+clientFile, true, false)
+	if err != nil {
+		log.Fatalln("Go fmt error:", err.Error())
+	}
+
+	testFileContents := buildTests(pkg)
+	testFile := clientDir + "client_test.go"
+	if !exists(testFile) {
+		err = write(testFile, testFileContents, true)
+		if err != nil {
+			log.Fatalln("client write file error:", err.Error())
+		}
+	}
+
+	_, err = execute("go fmt "+testFile, true, false)
 	if err != nil {
 		log.Fatalln("Go fmt error:", err.Error())
 	}
