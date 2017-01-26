@@ -13,7 +13,26 @@ Command line tool to generate client & server implementation with your pb stub f
 	
 # usage
 
-If you had a user service:
+If you had a user service defined as:
+```
+syntax = "proto3";
+package proto;
+
+service User {
+    rpc Authenticate (AuthRequest) returns (AuthResponse) {
+    }
+}
+
+message AuthRequest {
+    int64 user_id = 1;
+}
+
+message AuthResponse {
+    bool authenticated = 1;
+}
+```
+
+You would cd to your services directory and run:
 ```
 build-proto user/proto/user.proto
 ```
@@ -34,13 +53,13 @@ import (
 	"google.golang.org/grpc"
 )
 
-type Client struct {
+type client struct {
 	service proto.UserClient
 }
 
 type syncedClient struct {
 	sync.Mutex
-	client *Client
+	client *client
 }
 
 var (
@@ -55,7 +74,7 @@ func init() {
 // against the service.
 //
 // If the client is already initialized, it will not dial out again. It will just return the client.
-func NewClient() (*Client, error) {
+func NewClient() (*client, error) {
 
 	if cl.client != nil {
 		return cl.client, nil
@@ -63,8 +82,8 @@ func NewClient() (*Client, error) {
 
 	timeout := grpc.WithTimeout(time.Second * 2)
 
-	// TODO: host/port needs to be updated
-	g, err := grpc.Dial("localhost:8080", grpc.WithInsecure(), timeout)
+	// localhost:8000 needs to change to whatever the location of the service will be
+	g, err := grpc.Dial("localhost:8000", grpc.WithInsecure(), timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +94,7 @@ func NewClient() (*Client, error) {
 		cl.Unlock()
 		return cl.client, nil
 	}
-	cl.client = &Client{
+	cl.client = &client{
 		service: proto.NewUserClient(g),
 	}
 	cl.Unlock()
@@ -83,17 +102,21 @@ func NewClient() (*Client, error) {
 	return cl.client, err
 }
 
-// TODO: finish method(s)
-func (c *Client) SomeMethod(ctx context.Context, id int64) (*proto.SomeResponse, error) {
-
-	r, err := c.service.SomeMethod(ctx, &proto.SomeRequest{})
-	if err != nil {
-		return nil, err
-	}
-
-	return r, nil
+// Authenticate is this client's implementation of the UserClient interface
+func (c *client) Authenticate(ctx context.Context, req *proto.AuthRequest, opts ...grpc.CallOption) (*proto.AuthResponse, error) {
+	return c.service.Authenticate(ctx, req)
 }
 
+// TODO: fill in empty strings
+// Authenticate...
+func Authenticate(c proto.UserClient, ctx context.Context) (string, error) {
+	r, err := c.Authenticate(ctx, &proto.AuthRequest{})
+	if err != nil {
+		return "", err
+	}
+
+	return "", nil
+}
 ```
 
 # server/main.go
@@ -113,7 +136,7 @@ import (
 )
 
 var (
-	port string = "8080"
+	port string = "8000"
 )
 
 func main() {
@@ -123,7 +146,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Create a gRPC server
+	// Create a gRPC server with a logging middleware
 	server := grpc.NewServer()
 
 	// Register our service implementation with the server
@@ -133,28 +156,19 @@ func main() {
 	log.Fatalln(server.Serve(listener))
 }
 
-/*
-	TO DO:
-
-		- change 'someResponse' & 'SomeResponse' to match the response type
-		- change 'SomeRequest' to match the correct request type
-		- change 'SomeMethod' to match the method specified in your .proto file
-*/
-
 type userServer struct{}
 
-type someResponse struct {
-	res *SomeResponse
+type authenticateResponse struct {
+	res *proto.AuthResponse
 	err error
 }
 
-// TODO: finish implementing all methods from .proto file
-func (s *userServer) SomeMethod(ctx context.Context, req *SomeRequest) (*SomeResponse, error) {
+func (s *userServer) Authenticate(ctx context.Context, req *proto.AuthRequest) (*proto.AuthResponse, error) {
 	//thisLogger := logger.New(ctx) //if needed
 
-	c := make(chan *someResponse)
-	go func(req *SomeRequest) {
-		resp := new(someResponse)
+	c := make(chan *authenticateResponse)
+	go func(req *proto.AuthRequest) {
+		resp := new(authenticateResponse)
 
 		//do your stuff here to build the resp object
 

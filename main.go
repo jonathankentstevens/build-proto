@@ -9,7 +9,16 @@ import (
 	"os/exec"
 	"strings"
 	"unicode"
+	"utils/str"
 )
+
+type implementation struct {
+	method   string
+	request  string
+	response string
+}
+
+var implementations []implementation
 
 // updatePbFile updates the import paths
 func updatePbFIle(protoFile, pbFile string) string {
@@ -34,7 +43,15 @@ func updatePbFIle(protoFile, pbFile string) string {
 			replaceTxt := between(txt, `import "`, `.proto";`)
 			args := strings.Split(replaceTxt, "/")
 			importPkg := strings.Replace(args[len(args)-1], ".proto", "", 1)
-			contents = strings.Replace(contents, `import `+importPkg+` "`+importPkg+`"`, `import "services/`+importPkg+`"`, 1)
+			contents = strings.Replace(contents, `import `+importPkg+` "`+importPkg+`/proto"`, `import `+importPkg+` "services/`+importPkg+`/proto"`, 1)
+		} else if strings.Contains(txt, "rpc") {
+			args := strings.Split(strings.TrimSpace(txt), " ")
+			imp := implementation{
+				method:   args[1],
+				request:  between(args[2], "(", ")"),
+				response: between(args[4], "(", ")"),
+			}
+			implementations = append(implementations, imp)
 		}
 	}
 
@@ -43,7 +60,7 @@ func updatePbFIle(protoFile, pbFile string) string {
 
 // buildServer generates server package string
 func buildServer(pkg string) string {
-	return `package main
+	serverFileContents := `package main
 
 import (
 	"log"
@@ -57,7 +74,7 @@ import (
 )
 
 var (
-	port string = "8080"
+	port string = "8000"
 )
 
 func main() {
@@ -77,28 +94,25 @@ func main() {
 	log.Fatalln(server.Serve(listener))
 }
 
-/*
-	TO DO:
-
-		- change 'someResponse' & 'SomeResponse' to match the response type
-		- change 'SomeRequest' to match the correct request type
-		- change 'SomeMethod' to match the method specified in your .proto file
-*/
-
 type ` + pkg + `Server struct{}
-
-type someResponse struct {
-	res *SomeResponse
+`
+	for _, imp := range implementations {
+		serverFileContents += `
+type ` + lowercaseFirst(imp.method) + `Response struct {
+	res *proto.` + imp.response + `
 	err error
 }
+`
+	}
 
-// TODO: finish implementing all methods from .proto file
-func (s *` + pkg + `Server) SomeMethod(ctx context.Context, req *SomeRequest) (*SomeResponse, error) {
+	for _, imp := range implementations {
+		serverFileContents += `
+func (s *` + pkg + `Server) ` + imp.method + `(ctx context.Context, req *proto.` + imp.request + `) (*proto.` + imp.response + `, error) {
 	//thisLogger := logger.New(ctx) //if needed
 
-	c := make(chan *someResponse)
-	go func(req *SomeRequest) {
-		resp := new(someResponse)
+	c := make(chan *` + lowercaseFirst(imp.method) + `Response)
+	go func(req *proto.` + imp.request + `) {
+		resp := new(` + lowercaseFirst(imp.method) + `Response)
 
 		//do your stuff here to build the resp object
 
@@ -115,11 +129,14 @@ func (s *` + pkg + `Server) SomeMethod(ctx context.Context, req *SomeRequest) (*
 	}
 }
 `
+	}
+
+	return serverFileContents
 }
 
 // buildClient generates client package string
 func buildClient(pkg string) string {
-	return `package client
+	clientFileContents := `package client
 
 import (
 	"services/` + pkg + `/proto"
@@ -159,9 +176,8 @@ func NewClient() (*Client, error) {
 
 	timeout := grpc.WithTimeout(time.Second * 2)
 
-	// localhost:8080 needs to change to whatever the location of the service will be
-	// defined as in etcd
-	g, err := grpc.Dial("localhost:8080", grpc.WithInsecure(), timeout)
+	// localhost:8000 needs to change to whatever the location of the service will be
+	g, err := grpc.Dial("localhost:8000", grpc.WithInsecure(), timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -179,18 +195,28 @@ func NewClient() (*Client, error) {
 
 	return cl.client, err
 }
+`
 
-// TODO: finish method(s)
-func (c *Client) SomeMethod(ctx context.Context, id int64) (*proto.SomeResponse, error) {
+	for _, imp := range implementations {
+		clientFileContents += `
+// ` + imp.method + ` is this client's implementation of the ` + str.UppercaseFirst(pkg) + `Client interface
+func (c *client) ` + imp.method + `(ctx context.Context, req *proto.` + imp.request + `, opts ...grpc.CallOption) (*proto.` + imp.response + `, error) {
+	return c.service.` + imp.method + `(ctx, req)
+}
 
-	r, err := c.service.SomeMethod(ctx, &proto.SomeRequest{})
+// TODO: fill in empty strings
+// ` + imp.method + `...
+func ` + imp.method + `(c proto.` + str.UppercaseFirst(pkg) + `Client, ctx context.Context) (string, error) {
+	r, err := c.` + imp.method + `(ctx, &proto.` + imp.request + `{})
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
-	return r, nil
-}
-`
+	return "", nil
+}`
+	}
+
+	return clientFileContents
 }
 
 //getContents returns a byte array of the file contents passed in
@@ -356,18 +382,20 @@ func between(initial string, beginning string, end string) string {
 	return strings.TrimLeft(strings.TrimRight(initial, end), beginning)
 }
 
-//uppercaseFirst.. well, you know what it does
-func uppercaseFirst(s string) string {
-	if len(s) < 2 {
-		return strings.ToLower(s)
+//Does what it says it does
+func uppercaseFirst(str string) string {
+	for i, v := range str {
+		return string(unicode.ToUpper(v)) + str[i+1:]
 	}
+	return ""
+}
 
-	bts := []byte(s)
-
-	lc := bytes.ToUpper([]byte{bts[0]})
-	rest := bts[1:]
-
-	return string(bytes.Join([][]byte{lc, rest}, nil))
+//Does what it says it does
+func lowercaseFirst(str string) string {
+	for i, v := range str {
+		return string(unicode.ToLower(v)) + str[i+1:]
+	}
+	return ""
 }
 
 func main() {
