@@ -336,7 +336,6 @@ func execute(command string, showOutput bool, returnOutput bool) (string, error)
 		return string(data), nil
 	}
 
-
 	cmd := exec.Command(parts[0], parts[1:]...)
 	if showOutput {
 		cmd.Stdout = os.Stdout
