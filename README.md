@@ -32,7 +32,7 @@ message AuthResponse {
 }
 ```
 
-You would cd to your services directory and run:
+You would cd to your 'src/services' directory and run:
 ```
 build-proto user/proto/user.proto
 ```
