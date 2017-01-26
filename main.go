@@ -334,16 +334,17 @@ func execute(command string, showOutput bool, returnOutput bool) (string, error)
 			return "", err
 		}
 		return string(data), nil
-	} else {
-		cmd := exec.Command(parts[0], parts[1:]...)
-		if showOutput {
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-		}
-		err := cmd.Run()
-		if err != nil {
-			return "", err
-		}
+	}
+
+
+	cmd := exec.Command(parts[0], parts[1:]...)
+	if showOutput {
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+	}
+	err := cmd.Run()
+	if err != nil {
+		return "", err
 	}
 
 	return "", nil
