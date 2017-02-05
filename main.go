@@ -142,18 +142,19 @@ import (
 	"services/` + pkg + `/proto"
 	"sync"
 	"time"
+	"database/sql"
 
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 )
 
-type client struct {
+type Client struct {
 	service proto.` + uppercaseFirst(pkg) + `Client
 }
 
 type syncedClient struct {
 	sync.Mutex
-	client *client
+	client *Client
 }
 
 var (
@@ -168,7 +169,7 @@ func init() {
 // against the service.
 //
 // If the client is already initialized, it will not dial out again. It will just return the client.
-func NewClient() (*client, error) {
+func NewClient() (*Client, error) {
 
 	if cl.client != nil {
 		return cl.client, nil
@@ -188,7 +189,7 @@ func NewClient() (*client, error) {
 		cl.Unlock()
 		return cl.client, nil
 	}
-	cl.client = &client{
+	cl.client = &Client{
 		service: proto.New` + uppercaseFirst(pkg) + `Client(g),
 	}
 	cl.Unlock()
@@ -200,15 +201,18 @@ func NewClient() (*client, error) {
 	for _, imp := range implementations {
 		clientFileContents += `
 // ` + imp.method + ` is this client's implementation of the ` + str.UppercaseFirst(pkg) + `Client interface
-func (c *client) ` + imp.method + `(ctx context.Context, req *proto.` + imp.request + `, opts ...grpc.CallOption) (*proto.` + imp.response + `, error) {
+func (c *Client) ` + imp.method + `(ctx context.Context, req *proto.` + imp.request + `, opts ...grpc.CallOption) (*proto.` + imp.response + `, error) {
 	return c.service.` + imp.method + `(ctx, req)
 }
 
 // TODO: fill in empty strings
 // ` + imp.method + `...
-func ` + imp.method + `(c proto.` + str.UppercaseFirst(pkg) + `Client, ctx context.Context) (string, error) {
+func ` + imp.method + `(ctx context.Context, c proto.` + str.UppercaseFirst(pkg) + `Client) (string, error) {
 	_, err := c.` + imp.method + `(ctx, &proto.` + imp.request + `{})
 	if err != nil {
+		if strings.Contains(err.Error(), "sql: no results in result set") {
+			err = sql.ErrNoRows
+		}
 		return "", err
 	}
 
@@ -252,7 +256,8 @@ func TestNewClient(t *testing.T) {
 	if c == nil {
 		t.Fatal("client is nil even though no error was thrown")
 	}
-}`
+}
+`
 
 	for _, imp := range implementations {
 		testFileContents += `
