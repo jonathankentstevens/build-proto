@@ -45,7 +45,9 @@ The following would be the two files created in addition to the normal pb stub:
 package client
 
 import (
+	"database/sql"
 	"services/user/proto"
+	"strings"
 	"sync"
 	"time"
 
@@ -53,69 +55,64 @@ import (
 	"google.golang.org/grpc"
 )
 
-type client struct {
+type SvcClient struct {
+	sync.Mutex
 	service proto.UserClient
 }
 
-type syncedClient struct {
-	sync.Mutex
-	client *client
-}
-
 var (
-	cl *syncedClient
+	cl   *SvcClient
+	once sync.Once
 )
 
 func init() {
-	cl = new(syncedClient)
+	cl = new(SvcClient)
 }
 
 // NewClient connects to the user service and returns a client to be used for calling methods
 // against the service.
 //
 // If the client is already initialized, it will not dial out again. It will just return the client.
-func NewClient() (*client, error) {
+func NewClient() (*SvcClient, error) {
 
-	if cl.client != nil {
-		return cl.client, nil
-	}
+	var clientErr error
 
-	timeout := grpc.WithTimeout(time.Second * 2)
+	once.Do(func() {
+		timeout := grpc.WithTimeout(time.Second * 1)
 
-	// localhost:8000 needs to change to whatever the location of the service will be
-	g, err := grpc.Dial("localhost:8000", grpc.WithInsecure(), timeout)
-	if err != nil {
-		return nil, err
-	}
+		// localhost:8000 needs to change to whatever the location of the service will be
+		g, err := grpc.Dial("localhost:8000", grpc.WithInsecure(), timeout)
+		if err != nil {
+			clientErr = err
+		}
 
-	// get the service client
-	cl.Lock()
-	if cl.client != nil {
-		cl.Unlock()
-		return cl.client, nil
-	}
-	cl.client = &client{
-		service: proto.NewUserClient(g),
-	}
-	cl.Unlock()
+		// get the service client
+		if cl != nil {
+			clientErr = err
+		}
 
-	return cl.client, err
+		cl.service = proto.NewUserClient(g)
+	})
+
+	return cl, clientErr
 }
 
 // Authenticate is this client's implementation of the UserClient interface
-func (c *client) Authenticate(ctx context.Context, req *proto.AuthRequest, opts ...grpc.CallOption) (*proto.AuthResponse, error) {
+func (c *SvcClient) Authenticate(ctx context.Context, req *proto.AuthRequest, opts ...grpc.CallOption) (*proto.AuthResponse, error) {
 	return c.service.Authenticate(ctx, req)
 }
 
-// TODO: fill in empty strings
 // Authenticate...
-func Authenticate(c proto.UserClient, ctx context.Context) (string, error) {
-	r, err := c.Authenticate(ctx, &proto.AuthRequest{})
+func Authenticate(ctx context.Context, c proto.UserClient) (*proto.AuthResponse, error) {
+	res, err := c.Authenticate(ctx, &proto.AuthRequest{})
 	if err != nil {
-		return "", err
+		if strings.Contains(err.Error(), "sql: no results in result set") {
+			err = sql.ErrNoRows
+		}
+		return nil, err
 	}
 
-	return "", nil
+	return res, nil
 }
 ```
 
@@ -148,9 +145,10 @@ func TestNewClient(t *testing.T) {
 		t.Fatal("client is nil even though no error was thrown")
 	}
 }
+
 func TestAuthenticate(t *testing.T) {
 	c := new(testClient)
-	_, err := client.Authenticate(c, context.Background())
+	_, err := client.Authenticate(context.Background(), c)
 	if err != nil {
 		t.Fatalf("expected nil from Authenticate, got error: %v", err)
 	}
@@ -202,7 +200,6 @@ type authenticateResponse struct {
 }
 
 func (s *userServer) Authenticate(ctx context.Context, req *proto.AuthRequest) (*proto.AuthResponse, error) {
-	//thisLogger := logger.New(ctx) //if needed
 
 	c := make(chan *authenticateResponse)
 	go func(req *proto.AuthRequest) {
@@ -222,5 +219,4 @@ func (s *userServer) Authenticate(ctx context.Context, req *proto.AuthRequest) (
 		}
 	}
 }
-
 ```

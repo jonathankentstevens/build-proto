@@ -107,7 +107,6 @@ type ` + lowercaseFirst(imp.method) + `Response struct {
 	for _, imp := range implementations {
 		serverFileContents += `
 func (s *` + pkg + `Server) ` + imp.method + `(ctx context.Context, req *proto.` + imp.request + `) (*proto.` + imp.response + `, error) {
-	//thisLogger := logger.New(ctx) //if needed
 
 	c := make(chan *` + lowercaseFirst(imp.method) + `Response)
 	go func(req *proto.` + imp.request + `) {
@@ -198,18 +197,17 @@ func (c *SvcClient) ` + imp.method + `(ctx context.Context, req *proto.` + imp.r
 	return c.service.` + imp.method + `(ctx, req)
 }
 
-// TODO: fill in empty strings
 // ` + imp.method + `...
-func ` + imp.method + `(ctx context.Context, c proto.` + uppercaseFirst(pkg) + `Client) (string, error) {
-	_, err := c.` + imp.method + `(ctx, &proto.` + imp.request + `{})
+func ` + imp.method + `(ctx context.Context, c proto.` + uppercaseFirst(pkg) + `Client) (*proto.` + imp.response + `, error) {
+	res, err := c.` + imp.method + `(ctx, &proto.` + imp.request + `{})
 	if err != nil {
 		if strings.Contains(err.Error(), "sql: no results in result set") {
 			err = sql.ErrNoRows
 		}
-		return "", err
+		return nil, err
 	}
 
-	return "", nil
+	return res, nil
 }`
 	}
 
@@ -256,7 +254,7 @@ func TestNewClient(t *testing.T) {
 		testFileContents += `
 func Test` + imp.method + `(t *testing.T) {
 	c := new(testClient)
-	_, err := client.` + imp.method + `(c, context.Background())
+	_, err := client.` + imp.method + `(context.Background(), c)
 	if err != nil {
 		t.Fatalf("expected nil from ` + imp.method + `, got error: %v", err)
 	}
