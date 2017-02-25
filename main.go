@@ -21,7 +21,7 @@ type implementation struct {
 var implementations []implementation
 
 // updatePbFile updates the import paths
-func updatePbFIle(protoFile, pbFile string) string {
+func updatePbFile(protoFile, pbFile string) string {
 	cb, err := getContents(pbFile)
 	if err != nil {
 		log.Fatalln("Read file error:", err.Error())
@@ -139,69 +139,63 @@ func buildClient(pkg string) string {
 	clientFileContents := `package client
 
 import (
+	"database/sql"
 	"services/` + pkg + `/proto"
+	"strings"
 	"sync"
 	"time"
-	"database/sql"
 
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 )
 
-type Client struct {
+type SvcClient struct {
+	sync.Mutex
 	service proto.` + uppercaseFirst(pkg) + `Client
 }
 
-type syncedClient struct {
-	sync.Mutex
-	client *Client
-}
-
 var (
-	cl *syncedClient
+	cl   *SvcClient
+	once sync.Once
 )
 
 func init() {
-	cl = new(syncedClient)
+	cl = new(SvcClient)
 }
 
 // NewClient connects to the ` + pkg + ` service and returns a client to be used for calling methods
 // against the service.
 //
 // If the client is already initialized, it will not dial out again. It will just return the client.
-func NewClient() (*Client, error) {
+func NewClient() (*SvcClient, error) {
 
-	if cl.client != nil {
-		return cl.client, nil
-	}
+	var clientErr error
 
-	timeout := grpc.WithTimeout(time.Second * 2)
+	once.Do(func() {
+		timeout := grpc.WithTimeout(time.Second * 1)
 
-	// localhost:8000 needs to change to whatever the location of the service will be
-	g, err := grpc.Dial("localhost:8000", grpc.WithInsecure(), timeout)
-	if err != nil {
-		return nil, err
-	}
+		// localhost:8000 needs to change to whatever the location of the service will be
+		g, err := grpc.Dial("localhost:8000", grpc.WithInsecure(), timeout)
+		if err != nil {
+			clientErr = err
+		}
 
-	// get the service client
-	cl.Lock()
-	if cl.client != nil {
-		cl.Unlock()
-		return cl.client, nil
-	}
-	cl.client = &Client{
-		service: proto.New` + uppercaseFirst(pkg) + `Client(g),
-	}
-	cl.Unlock()
+		// get the service client
+		if cl != nil {
+			clientErr = err
+		}
 
-	return cl.client, err
+		cl.service = proto.New` + uppercaseFirst(pkg) + `Client(g)
+	})
+
+	return cl, clientErr
 }
 `
 
 	for _, imp := range implementations {
 		clientFileContents += `
 // ` + imp.method + ` is this client's implementation of the ` + str.UppercaseFirst(pkg) + `Client interface
-func (c *Client) ` + imp.method + `(ctx context.Context, req *proto.` + imp.request + `, opts ...grpc.CallOption) (*proto.` + imp.response + `, error) {
+func (c *SvcClient) ` + imp.method + `(ctx context.Context, req *proto.` + imp.request + `, opts ...grpc.CallOption) (*proto.` + imp.response + `, error) {
 	return c.service.` + imp.method + `(ctx, req)
 }
 
@@ -473,7 +467,7 @@ func main() {
 		log.Fatalln("protoc error:", err.Error())
 	}
 
-	contents := updatePbFIle(file, protoDir+pbFile)
+	contents := updatePbFile(file, protoDir+pbFile)
 	err = write(protoDir+pbFile, contents, true)
 	if err != nil {
 		log.Fatalln("pb write file error:", err.Error())
