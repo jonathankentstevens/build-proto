@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"strings"
 	"unicode"
-	"utils/str"
 )
 
 type implementation struct {
@@ -194,14 +193,14 @@ func NewClient() (*SvcClient, error) {
 
 	for _, imp := range implementations {
 		clientFileContents += `
-// ` + imp.method + ` is this client's implementation of the ` + str.UppercaseFirst(pkg) + `Client interface
+// ` + imp.method + ` is this client's implementation of the ` + uppercaseFirst(pkg) + `Client interface
 func (c *SvcClient) ` + imp.method + `(ctx context.Context, req *proto.` + imp.request + `, opts ...grpc.CallOption) (*proto.` + imp.response + `, error) {
 	return c.service.` + imp.method + `(ctx, req)
 }
 
 // TODO: fill in empty strings
 // ` + imp.method + `...
-func ` + imp.method + `(ctx context.Context, c proto.` + str.UppercaseFirst(pkg) + `Client) (string, error) {
+func ` + imp.method + `(ctx context.Context, c proto.` + uppercaseFirst(pkg) + `Client) (string, error) {
 	_, err := c.` + imp.method + `(ctx, &proto.` + imp.request + `{})
 	if err != nil {
 		if strings.Contains(err.Error(), "sql: no results in result set") {
