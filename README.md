@@ -5,7 +5,7 @@
 
 # build-proto
 
-Command line tool to generate client & server implementation with your pb stub for gRPC
+Command line tool to generate a client & server implementation of a gRPC service to compliment your pb stub
 
 # implementation
     go get github.com/jonathankentstevens/build-proto
@@ -42,12 +42,12 @@ The following would be the two files created in addition to the normal pb stub:
 # client/client.go
 
 ```go
+// Package client serves as the mechanism to connect to the user gRPC service and execute
+// any methods against it
 package client
 
 import (
-	"database/sql"
 	"services/user/proto"
-	"strings"
 	"sync"
 	"time"
 
@@ -55,14 +55,14 @@ import (
 	"google.golang.org/grpc"
 )
 
+// SvcClient holds the UserClient service connection to allow for safe concurrent access
 type SvcClient struct {
 	sync.Mutex
 	service proto.UserClient
 }
 
 var (
-	cl   *SvcClient
-	once sync.Once
+	cl *SvcClient
 )
 
 func init() {
@@ -75,26 +75,23 @@ func init() {
 // If the client is already initialized, it will not dial out again. It will just return the client.
 func NewClient() (*SvcClient, error) {
 
-	var clientErr error
+	cl.Lock()
+	defer cl.Unlock()
+	if cl.service != nil {
+		return cl, nil
+	}
 
-	once.Do(func() {
-		timeout := grpc.WithTimeout(time.Second * 1)
+	timeout := grpc.WithTimeout(time.Second * 1)
 
-		// localhost:8000 needs to change to whatever the location of the service will be
-		g, err := grpc.Dial("localhost:8000", grpc.WithInsecure(), timeout)
-		if err != nil {
-			clientErr = err
-		}
+	// localhost:8000 needs to change to whatever the location of the service will be
+	g, err := grpc.Dial("localhost:8000", grpc.WithInsecure(), timeout)
+	if err != nil {
+		return nil, err
+	}
 
-		// get the service client
-		if cl != nil {
-			clientErr = err
-		}
+	cl.service = proto.NewUserClient(g)
 
-		cl.service = proto.NewUserClient(g)
-	})
-
-	return cl, clientErr
+	return cl, nil
 }
 
 // Authenticate is this client's implementation of the UserClient interface
@@ -106,9 +103,6 @@ func (c *SvcClient) Authenticate(ctx context.Context, req *proto.AuthRequest, op
 func Authenticate(ctx context.Context, c proto.UserClient) (*proto.AuthResponse, error) {
 	res, err := c.Authenticate(ctx, &proto.AuthRequest{})
 	if err != nil {
-		if strings.Contains(err.Error(), "sql: no results in result set") {
-			err = sql.ErrNoRows
-		}
 		return nil, err
 	}
 
@@ -131,6 +125,8 @@ import (
 
 type testClient struct{}
 
+// Authenticate is the custom implementation of the UserClient interface to allow for unit testing the logic of
+// the user gRPC service without requiring a connection to it
 func (c *testClient) Authenticate(ctx context.Context, req *proto.AuthRequest, opts ...grpc.CallOption) (*proto.AuthResponse, error) {
 	return &proto.AuthResponse{}, nil
 }
@@ -163,7 +159,6 @@ package main
 import (
 	"log"
 	"net"
-	"os"
 	"services/user/proto"
 
 	"golang.org/x/net/context"
@@ -179,17 +174,20 @@ func main() {
 	// Create a listener to accept incoming requests
 	listener, err := net.Listen("tcp", ":"+port)
 	if err != nil {
-		os.Exit(1)
+		// handle error
 	}
 
-	// Create a gRPC server with a logging middleware
+	// Create a gRPC server
 	server := grpc.NewServer()
 
 	// Register our service implementation with the server
 	proto.RegisterUserServer(server, new(userServer))
 
 	log.Println("Serving on", port)
-	log.Fatalln(server.Serve(listener))
+	err = server.Serve(listener)
+	if err != nil {
+		// handle error
+	}
 }
 
 type userServer struct{}

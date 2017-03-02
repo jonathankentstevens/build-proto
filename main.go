@@ -157,7 +157,6 @@ type SvcClient struct {
 
 var (
 	cl   *SvcClient
-	once sync.Once
 )
 
 func init() {
@@ -170,26 +169,23 @@ func init() {
 // If the client is already initialized, it will not dial out again. It will just return the client.
 func NewClient() (*SvcClient, error) {
 
-	var clientErr error
+	cl.Lock()
+	defer cl.Unlock()
+	if cl.service != nil {
+		return cl, nil
+	}
 
-	once.Do(func() {
-		timeout := grpc.WithTimeout(time.Second * 1)
+	timeout := grpc.WithTimeout(time.Second * 1)
 
-		// localhost:8000 needs to change to whatever the location of the service will be
-		g, err := grpc.Dial("localhost:8000", grpc.WithInsecure(), timeout)
-		if err != nil {
-			clientErr = err
-		}
+	// localhost:8000 needs to change to whatever the location of the service will be
+	g, err := grpc.Dial("localhost:8000", grpc.WithInsecure(), timeout)
+	if err != nil {
+		return nil, err
+	}
 
-		// get the service client
-		if cl != nil {
-			clientErr = err
-		}
+	cl.service = proto.New` + uppercaseFirst(pkg) + `Client(g)
 
-		cl.service = proto.New` + uppercaseFirst(pkg) + `Client(g)
-	})
-
-	return cl, clientErr
+	return cl, nil
 }
 `
 
