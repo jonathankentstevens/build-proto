@@ -64,7 +64,6 @@ func buildServer(pkg string) string {
 import (
 	"log"
 	"net"
-	"os"
 	"services/` + pkg + `/proto"
 
 	"golang.org/x/net/context"
@@ -80,17 +79,20 @@ func main() {
 	// Create a listener to accept incoming requests
 	listener, err := net.Listen("tcp", ":"+port)
 	if err != nil {
-		os.Exit(1)
+		// handle error
 	}
 
-	// Create a gRPC server with a logging middleware
+	// Create a gRPC server
 	server := grpc.NewServer()
 
 	// Register our service implementation with the server
 	proto.Register` + uppercaseFirst(pkg) + `Server(server, new(` + pkg + `Server))
 
 	log.Println("Serving on", port)
-	log.Fatalln(server.Serve(listener))
+	err = server.Serve(listener)
+	if err != nil {
+		// handle error
+	}
 }
 
 type ` + pkg + `Server struct{}
@@ -134,12 +136,12 @@ func (s *` + pkg + `Server) ` + imp.method + `(ctx context.Context, req *proto.`
 
 // buildClient generates client package string
 func buildClient(pkg string) string {
-	clientFileContents := `package client
+	clientFileContents := `// Package client serves as the mechanism to connect to the ` + pkg + ` gRPC service and execute
+// any methods against it
+package client
 
 import (
-	"database/sql"
 	"services/` + pkg + `/proto"
-	"strings"
 	"sync"
 	"time"
 
@@ -147,6 +149,7 @@ import (
 	"google.golang.org/grpc"
 )
 
+// SvcClient holds the ` + uppercaseFirst(pkg) + `Client service connection to allow for safe concurrent access
 type SvcClient struct {
 	sync.Mutex
 	service proto.` + uppercaseFirst(pkg) + `Client
@@ -201,9 +204,6 @@ func (c *SvcClient) ` + imp.method + `(ctx context.Context, req *proto.` + imp.r
 func ` + imp.method + `(ctx context.Context, c proto.` + uppercaseFirst(pkg) + `Client) (*proto.` + imp.response + `, error) {
 	res, err := c.` + imp.method + `(ctx, &proto.` + imp.request + `{})
 	if err != nil {
-		if strings.Contains(err.Error(), "sql: no results in result set") {
-			err = sql.ErrNoRows
-		}
 		return nil, err
 	}
 
@@ -231,6 +231,8 @@ type testClient struct{}
 
 	for _, imp := range implementations {
 		testFileContents += `
+// ` + imp.method + ` is the custom implementation of the ` + uppercaseFirst(pkg) + `Client interface to allow for unit testing the logic of
+// the ` + pkg + ` gRPC service without requiring a connection to it
 func (c *testClient) ` + imp.method + `(ctx context.Context, req *proto.` + imp.request + `, opts ...grpc.CallOption) (*proto.` + imp.response + `, error) {
 	return &proto.` + imp.response + `{}, nil
 }
