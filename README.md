@@ -49,7 +49,7 @@ You would cd to your '$GOPATH/src' directory and run:
 build-proto path/to/user.proto
 ```
 
-The following would be the two files created in addition to the normal pb stub:
+The following three files would be created in addition to the normal pb stub:
 
 # client/client.go
 
@@ -191,7 +191,7 @@ func TestRegister(t *testing.T) {
 }
 ```
 
-# server/main.go
+# server/server.go
 
 ```go
 package main
