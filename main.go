@@ -67,6 +67,7 @@ func buildServer(pkg string) string {
 import (
 	"log"
 	"net"
+	"os"
 	"` + dir + `proto"
 
 	"golang.org/x/net/context"
@@ -75,7 +76,7 @@ import (
 )
 
 var (
-	port string = "8000"
+	port string = os.Getenv("` + strings.ToUpper(pkg) + `_SERVICE_PORT")
 )
 
 func main() {
@@ -148,6 +149,7 @@ import (
 	"` + dir + `proto"
 	"sync"
 	"time"
+	"os"
 
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -181,8 +183,7 @@ func NewClient() (*SvcClient, error) {
 
 	timeout := grpc.WithTimeout(time.Second * 1)
 
-	// localhost:8000 needs to change to whatever the location of the service will be
-	g, err := grpc.Dial("localhost:8000", grpc.WithInsecure(), timeout)
+	g, err := grpc.Dial(os.Getenv("` + strings.ToUpper(pkg) + `_SERVICE_HOST")+":"+os.Getenv("` + strings.ToUpper(pkg) + `_SERVICE_PORT"), grpc.WithInsecure(), timeout)
 	if err != nil {
 		return nil, err
 	}
