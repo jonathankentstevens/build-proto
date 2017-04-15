@@ -17,7 +17,10 @@ type implementation struct {
 	response string
 }
 
-var implementations []implementation
+var (
+	implementations []implementation
+	dir             string
+)
 
 // updatePbFile updates the import paths
 func updatePbFile(protoFile, pbFile string) string {
@@ -42,7 +45,7 @@ func updatePbFile(protoFile, pbFile string) string {
 			replaceTxt := between(txt, `import "`, `.proto";`)
 			args := strings.Split(replaceTxt, "/")
 			importPkg := strings.Replace(args[len(args)-1], ".proto", "", 1)
-			contents = strings.Replace(contents, `import `+importPkg+` "`+importPkg+`/proto"`, `import `+importPkg+` "services/`+importPkg+`/proto"`, 1)
+			contents = strings.Replace(contents, `import `+importPkg+` "`+importPkg+`/proto"`, `import `+importPkg+` "/`+dir+importPkg+`/proto"`, 1)
 		} else if strings.Contains(txt, "rpc") {
 			args := strings.Split(strings.TrimSpace(txt), " ")
 			imp := implementation{
@@ -64,7 +67,7 @@ func buildServer(pkg string) string {
 import (
 	"log"
 	"net"
-	"services/` + pkg + `/proto"
+	"` + dir + `proto"
 
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -76,6 +79,7 @@ var (
 )
 
 func main() {
+
 	// Create a listener to accept incoming requests
 	listener, err := net.Listen("tcp", ":"+port)
 	if err != nil {
@@ -141,7 +145,7 @@ func buildClient(pkg string) string {
 package client
 
 import (
-	"services/` + pkg + `/proto"
+	"` + dir + `proto"
 	"sync"
 	"time"
 
@@ -214,8 +218,8 @@ func buildTests(pkg string) string {
 	testFileContents := `package client_test
 
 import (
-	"services/` + pkg + `/client"
-	"services/` + pkg + `/proto"
+	"` + dir + `client"
+	"` + dir + `proto"
 	"testing"
 
 	"golang.org/x/net/context"
@@ -447,17 +451,26 @@ func main() {
 		log.Fatalln("You must provide a path to the proto file")
 	}
 
+	curDir, err := os.Getwd()
+	if err != nil {
+		log.Fatalln("failed to get current dir:", err)
+	}
+
+	if curDir != os.Getenv("GOPATH")+"/src" {
+		log.Fatalln("you must be in your src dir (" + os.Getenv("GOPATH") + "/src)")
+	}
+
 	parts := strings.Split(file, "/")
 	protoFile := parts[len(parts)-1]
 	pbFile := strings.Replace(protoFile, ".proto", ".pb.go", 1)
 	pkg := strings.Replace(pbFile, ".pb.go", "", 1)
 	parts = parts[:len(parts)-2]
-	dir := strings.Join(parts, "/") + "/"
+	dir = strings.Join(parts, "/") + "/"
 	protoDir := dir + "proto/"
 	clientDir := dir + "client/"
 	serverDir := dir + "server/"
 
-	_, err := execute("protoc --go_out=plugins=grpc:. "+file, true, false)
+	_, err = execute("protoc --go_out=plugins=grpc:. "+file, true, false)
 	if err != nil {
 		log.Fatalln("protoc error:", err.Error())
 	}
@@ -468,8 +481,16 @@ func main() {
 		log.Fatalln("pb write file error:", err.Error())
 	}
 
+	// create server
+	if !exists(serverDir) {
+		err = os.Mkdir(serverDir, 0777)
+		if err != nil {
+			log.Fatalln("failed to create server dir:", err)
+		}
+	}
+
 	serverFileContents := buildServer(pkg)
-	serverFile := serverDir + "main.go"
+	serverFile := serverDir + "server.go"
 	if !exists(serverFile) {
 		err = write(serverFile, serverFileContents, true)
 		if err != nil {
@@ -480,6 +501,14 @@ func main() {
 	_, err = execute("go fmt "+serverFile, true, false)
 	if err != nil {
 		log.Fatalln("go fmt error:", err.Error())
+	}
+
+	// create client
+	if !exists(clientDir) {
+		err = os.Mkdir(clientDir, 0777)
+		if err != nil {
+			log.Fatalln("failed to create client dir:", err)
+		}
 	}
 
 	clientFileContents := buildClient(pkg)

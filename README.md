@@ -19,22 +19,34 @@ syntax = "proto3";
 package proto;
 
 service User {
-    rpc Authenticate (AuthRequest) returns (AuthResponse) {
-    }
+    rpc Login (LoginRequest) returns (LoginResponse) {}
+    rpc Register (RegisterRequest) returns (RegisterResponse) {}
 }
 
-message AuthRequest {
-    int64 user_id = 1;
+message LoginRequest {
+    string username = 1;
+    string password = 2;
 }
 
-message AuthResponse {
-    bool authenticated = 1;
+message LoginResponse {
+    string err = 1;
+}
+
+message RegisterRequest {
+    string first_name = 1;
+    string last_name = 2;
+    string email = 3;
+    string password = 4;
+}
+
+message RegisterResponse {
+    string err = 1;
 }
 ```
 
-You would cd to your 'src/services' directory and run:
+You would cd to your '$GOPATH/src' directory and run:
 ```
-build-proto user/proto/user.proto
+build-proto path/to/user.proto
 ```
 
 The following would be the two files created in addition to the normal pb stub:
@@ -47,7 +59,7 @@ The following would be the two files created in addition to the normal pb stub:
 package client
 
 import (
-	"services/user/proto"
+	"path/to/user/proto"
 	"sync"
 	"time"
 
@@ -94,14 +106,29 @@ func NewClient() (*SvcClient, error) {
 	return cl, nil
 }
 
-// Authenticate is this client's implementation of the UserClient interface
-func (c *SvcClient) Authenticate(ctx context.Context, req *proto.AuthRequest, opts ...grpc.CallOption) (*proto.AuthResponse, error) {
-	return c.service.Authenticate(ctx, req)
+// Login is this client's implementation of the UserClient interface
+func (c *SvcClient) Login(ctx context.Context, req *proto.LoginRequest, opts ...grpc.CallOption) (*proto.LoginResponse, error) {
+	return c.service.Login(ctx, req)
 }
 
-// Authenticate...
-func Authenticate(ctx context.Context, c proto.UserClient) (*proto.AuthResponse, error) {
-	res, err := c.Authenticate(ctx, &proto.AuthRequest{})
+// Login...
+func Login(ctx context.Context, c proto.UserClient) (*proto.LoginResponse, error) {
+	res, err := c.Login(ctx, &proto.LoginRequest{})
+	if err != nil {
+		return nil, err
+	}
+
+	return res, nil
+}
+
+// Register is this client's implementation of the UserClient interface
+func (c *SvcClient) Register(ctx context.Context, req *proto.RegisterRequest, opts ...grpc.CallOption) (*proto.RegisterResponse, error) {
+	return c.service.Register(ctx, req)
+}
+
+// Register...
+func Register(ctx context.Context, c proto.UserClient) (*proto.RegisterResponse, error) {
+	res, err := c.Register(ctx, &proto.RegisterRequest{})
 	if err != nil {
 		return nil, err
 	}
@@ -115,8 +142,8 @@ func Authenticate(ctx context.Context, c proto.UserClient) (*proto.AuthResponse,
 package client_test
 
 import (
-	"services/user/client"
-	"services/user/proto"
+	"path/to/user/client"
+	"path/to/user/proto"
 	"testing"
 
 	"golang.org/x/net/context"
@@ -125,10 +152,16 @@ import (
 
 type testClient struct{}
 
-// Authenticate is the custom implementation of the UserClient interface to allow for unit testing the logic of
+// Login is the custom implementation of the UserClient interface to allow for unit testing the logic of
 // the user gRPC service without requiring a connection to it
-func (c *testClient) Authenticate(ctx context.Context, req *proto.AuthRequest, opts ...grpc.CallOption) (*proto.AuthResponse, error) {
-	return &proto.AuthResponse{}, nil
+func (c *testClient) Login(ctx context.Context, req *proto.LoginRequest, opts ...grpc.CallOption) (*proto.LoginResponse, error) {
+	return &proto.LoginResponse{}, nil
+}
+
+// Register is the custom implementation of the UserClient interface to allow for unit testing the logic of
+// the user gRPC service without requiring a connection to it
+func (c *testClient) Register(ctx context.Context, req *proto.RegisterRequest, opts ...grpc.CallOption) (*proto.RegisterResponse, error) {
+	return &proto.RegisterResponse{}, nil
 }
 
 func TestNewClient(t *testing.T) {
@@ -142,11 +175,18 @@ func TestNewClient(t *testing.T) {
 	}
 }
 
-func TestAuthenticate(t *testing.T) {
+func TestLogin(t *testing.T) {
 	c := new(testClient)
-	_, err := client.Authenticate(context.Background(), c)
+	_, err := client.Login(context.Background(), c)
 	if err != nil {
-		t.Fatalf("expected nil from Authenticate, got error: %v", err)
+		t.Fatalf("expected nil from Login, got error: %v", err)
+	}
+}
+func TestRegister(t *testing.T) {
+	c := new(testClient)
+	_, err := client.Register(context.Background(), c)
+	if err != nil {
+		t.Fatalf("expected nil from Register, got error: %v", err)
 	}
 }
 ```
@@ -157,9 +197,9 @@ func TestAuthenticate(t *testing.T) {
 package main
 
 import (
+	"path/to/user/proto"
 	"log"
 	"net"
-	"services/user/proto"
 
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -171,6 +211,7 @@ var (
 )
 
 func main() {
+
 	// Create a listener to accept incoming requests
 	listener, err := net.Listen("tcp", ":"+port)
 	if err != nil {
@@ -192,16 +233,21 @@ func main() {
 
 type userServer struct{}
 
-type authenticateResponse struct {
-	res *proto.AuthResponse
+type loginResponse struct {
+	res *proto.LoginResponse
 	err error
 }
 
-func (s *userServer) Authenticate(ctx context.Context, req *proto.AuthRequest) (*proto.AuthResponse, error) {
+type registerResponse struct {
+	res *proto.RegisterResponse
+	err error
+}
 
-	c := make(chan *authenticateResponse)
-	go func(req *proto.AuthRequest) {
-		resp := new(authenticateResponse)
+func (s *userServer) Login(ctx context.Context, req *proto.LoginRequest) (*proto.LoginResponse, error) {
+
+	c := make(chan *loginResponse)
+	go func(req *proto.LoginRequest) {
+		resp := new(loginResponse)
 
 		//do your stuff here to build the resp object
 
@@ -217,4 +263,26 @@ func (s *userServer) Authenticate(ctx context.Context, req *proto.AuthRequest) (
 		}
 	}
 }
+
+func (s *userServer) Register(ctx context.Context, req *proto.RegisterRequest) (*proto.RegisterResponse, error) {
+
+	c := make(chan *registerResponse)
+	go func(req *proto.RegisterRequest) {
+		resp := new(registerResponse)
+
+		//do your stuff here to build the resp object
+
+		c <- resp
+	}(req)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, grpc.Errorf(codes.Canceled, "some error message")
+		case result := <-c:
+			return result.res, result.err
+		}
+	}
+}
+
 ```
