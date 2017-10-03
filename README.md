@@ -9,7 +9,6 @@ Command line tool to generate a client & server implementation of a gRPC service
 
 # implementation
     go get github.com/jonathankentstevens/build-proto
-	go install github.com/jonathankentstevens/build-proto
 	
 # usage
 
