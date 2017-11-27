@@ -1,14 +1,14 @@
 [![License](http://img.shields.io/:license-gpl3-blue.svg)](http://www.gnu.org/licenses/gpl-3.0.html)
-[![Go Report Card](https://goreportcard.com/badge/github.com/jonathankentstevens/build-proto)](https://goreportcard.com/report/github.com/jonathankentstevens/build-proto)
-[![GoDoc](https://godoc.org/github.com/jonathankentstevens/build-proto?status.svg)](https://godoc.org/github.com/jonathankentstevens/build-proto)
-[![Build Status](https://travis-ci.org/jonathankentstevens/build-proto.svg?branch=master)](https://travis-ci.org/jonathankentstevens/build-proto)
+[![Go Report Card](https://goreportcard.com/badge/github.com/jrkt/build-proto)](https://goreportcard.com/report/github.com/jrkt/build-proto)
+[![GoDoc](https://godoc.org/github.com/jrkt/build-proto?status.svg)](https://godoc.org/github.com/jrkt/build-proto)
+[![Build Status](https://travis-ci.org/jrkt/build-proto.svg?branch=master)](https://travis-ci.org/jrkt/build-proto)
 
 # build-proto
 
 Command line tool to generate a client & server implementation of a gRPC service to compliment your pb stub
 
 # implementation
-    go get github.com/jonathankentstevens/build-proto
+    go get github.com/jrkt/build-proto
 	
 # usage
 
